@@ -22,9 +22,9 @@ Messages are addressed by `messageId` + `account` + `mailbox` (all returned by l
 ## Build & install
 ```bash
 swift build -c release
-claude mcp add apple-mail -s user "$PWD/.build/release/apple-mail-mcp"
+claude mcp add mail-mcp -s user "$PWD/.build/release/apple-mail-mcp"
 ```
-Claude Desktop: add `{"apple-mail": {"command": "<path>/.build/release/apple-mail-mcp"}}` under `mcpServers`.
+Claude Desktop: add `{"mail-mcp": {"command": "<path>/.build/release/apple-mail-mcp"}}` under `mcpServers`.
 
 First use triggers macOS's "… wants to control Mail" prompt — allow it
 (System Settings → Privacy & Security → Automation).
