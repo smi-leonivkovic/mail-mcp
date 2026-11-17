@@ -387,6 +387,40 @@ func saveAttachments(_ a: [String: Any]) throws -> String {
     return lines.joined(separator: "\n")
 }
 
+// MARK: - Signatures
+
+/// The signature Mail assigns to an account by default (Mail → Settings → Signatures), if readable.
+func defaultSignatureName(forAccount name: String) -> String? {
+    guard let acct = try? findAccount(name) else { return nil }
+    let base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mail")
+    guard let versions = try? FileManager.default.contentsOfDirectory(atPath: base.path),
+          let v = versions.filter({ $0.hasPrefix("V") }).sorted(by: { (Int($0.dropFirst()) ?? 0) < (Int($1.dropFirst()) ?? 0) }).last else { return nil }
+    let dir = base.appendingPathComponent("\(v)/MailData/Signatures")
+    func plist(_ file: String) -> Any? {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent(file)) else { return nil }
+        return try? PropertyListSerialization.propertyList(from: data, format: nil)
+    }
+    guard let map = plist("AccountsMap.plist") as? [String: Any],
+          let entry = map[acct.id] as? [String: Any],
+          let uid = (entry["Signatures"] as? [String])?.first,
+          let all = plist("AllSignatures.plist") as? [[String: Any]],
+          let sig = all.first(where: { $0["SignatureUniqueId"] as? String == uid }),
+          let sigName = sig["SignatureName"] as? String else { return nil }
+    return sigName
+}
+
+/// AppleScript that attaches a signature to `target`. `requested`: a signature name, "none", or empty for the account default.
+func signatureSnippet(_ target: String, requested: String, account: String?) -> (script: String, used: String?) {
+    if requested.lowercased() == "none" { return ("", nil) }
+    let name = requested.isEmpty ? account.flatMap(defaultSignatureName(forAccount:)) : requested
+    guard let name else { return ("", nil) }
+    return ("""
+    try
+        set message signature of \(target) to signature \(q(name))
+    end try
+    """, name)
+}
+
 // MARK: - Composing
 
 /// "Full Name <address>" for an account name or email address.
@@ -414,6 +448,8 @@ func composeMessage(_ a: [String: Any]) throws -> String {
         "make new attachment with properties {file name:(POSIX file \(q((path as NSString).expandingTildeInPath)) as alias)} at after the last paragraph"
     }
     let sender = try senderString(a.str("from")).map { "set sender of newMsg to \(q($0))" } ?? ""
+    let fromAccount = a.str("from").isEmpty ? nil : (try findAccount(a.str("from")))?.name
+    let sig = signatureSnippet("newMsg", requested: a.str("signature"), account: fromAccount)
     try runMail("""
     set newMsg to make new outgoing message with properties {subject:\(q(subject)), content:\(q(body + "\n")), visible:\(sendNow ? "false" : "true")}
     \(sender)
@@ -421,12 +457,14 @@ func composeMessage(_ a: [String: Any]) throws -> String {
         \(recipients.joined(separator: "\n        "))
         \(attachments.joined(separator: "\n        "))
     end tell
+    \(sig.script)
     \(sendNow ? "send newMsg" : "activate")
     return "ok"
     """)
+    let sigNote = sig.used.map { " Signature: \($0)." } ?? ""
     return sendNow
-        ? "Sent “\(subject)” to \(to.joined(separator: ", "))."
-        : "Draft “\(subject)” opened in Mail for review (not sent). Pass send=true to send directly."
+        ? "Sent “\(subject)” to \(to.joined(separator: ", ")).\(sigNote)"
+        : "Draft “\(subject)” opened in Mail for review (not sent).\(sigNote) Pass send=true to send directly."
 }
 
 func replyMessage(_ a: [String: Any]) throws -> String {
@@ -445,6 +483,7 @@ func replyMessage(_ a: [String: Any]) throws -> String {
         set quoted to content of r
     end try
     set content of r to \(q(body + "\n\n")) & quoted
+    \(signatureSnippet("r", requested: a.str("signature"), account: loc.account).script)
     \(sendNow ? "send r" : "activate")
     return "ok"
     """)

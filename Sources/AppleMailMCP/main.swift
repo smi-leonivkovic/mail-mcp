@@ -82,6 +82,7 @@ let tools: [(name: String, description: String, properties: [String: Any], requi
       "body": prop("string", "Plain-text body"),
       "from": prop("string", "Account name or email address to send from (optional; Mail's default otherwise)"),
       "attachments": arrayProp("string", "Absolute file paths to attach (optional)"),
+      "signature": prop("string", "Mail signature name (default: the From account's default signature in Mail; 'none' for no signature). Don't also type a sign-off/signature into body."),
       "send": prop("boolean", "Send immediately instead of opening a draft (default false)")],
      ["to", "subject"], composeMessage),
 
@@ -89,6 +90,7 @@ let tools: [(name: String, description: String, properties: [String: Any], requi
      locatorProps.merging([
         "body": prop("string", "Reply text (placed above the quoted original)"),
         "replyAll": prop("boolean", "Reply to all recipients (default false)"),
+        "signature": prop("string", "Mail signature name (default: the account's default signature; 'none' for no signature)"),
         "send": prop("boolean", "Send immediately instead of opening a draft (default false)")]) { $1 },
      ["messageId", "body"], replyMessage),
 
