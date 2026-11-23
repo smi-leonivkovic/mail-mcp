@@ -19,6 +19,11 @@ Modelled on [AlexChambers/calendar-mcp](https://github.com/AlexChambers/calendar
 | `mail_compose` | New email. Opens a draft for review by default; `send=true` sends |
 | `mail_reply` | Reply / reply-all. Draft by default; `send=true` sends |
 | `mail_update_messages` | Bulk mark read/flagged, archive, move, or move to Trash |
+| `mail_list_newsletters` | Senders grouped by message count whose latest mail has a `List-Unsubscribe` header, with the unsubscribe method (one-click, mailto, https). Needs the index |
+| `mail_get_unsubscribe` | Unsubscribe targets of one or many messages: header https/mailto, RFC 8058 one-click, or links found in the body. Read-only |
+| `mail_unsubscribe` | Unsubscribe once per sender/list. **Dry run by default.** One-click is POSTed; mailto becomes a draft (`sendMailto=true` sends); plain links are only returned, never opened |
+
+Unsubscribing never opens a plain link: a GET can confirm the address to a spammer or land on a confirmation form, so those come back as "manual". Senders without any unsubscribe option are reported so they can be marked as junk instead.
 
 Messages are addressed by `messageId` (returned by list/search). With the index available, that id is all a tool needs.
 

@@ -103,6 +103,25 @@ let tools: [(name: String, description: String, properties: [String: Any], requi
         "moveTo": prop("string", "Destination mailbox name"),
         "moveToAccount": prop("string", "Account of the destination mailbox (default: same account)")]) { $1 },
      [], updateMessages),
+
+    ("mail_list_newsletters", "Find newsletter senders: groups mail by sender (Mail index), reads the latest message's headers and lists senders with a List-Unsubscribe header, most messages first, with the method mail_unsubscribe would use (one-click, mailto, https manual).",
+     ["account": prop("string", "Limit to one account (name or address)"),
+      "mailbox": prop("string", "Limit to one mailbox, e.g. INBOX (default: all except Trash/Junk)"),
+      "since": prop("string", "Only messages received on/after YYYY-MM-DD"),
+      "minCount": prop("integer", "Only senders with at least this many messages (default 1)"),
+      "includeWithoutHeader": prop("boolean", "Also list frequent senders without a List-Unsubscribe header (default false)"),
+      "limit": prop("integer", "Max senders (default 100, max 500)")], [], listNewsletters),
+
+    ("mail_get_unsubscribe", "Show the unsubscribe options of one or more messages: List-Unsubscribe https/mailto targets, RFC 8058 one-click support, and (without a header, or with scanBody) unsubscribe links found in the HTML body. Read-only.",
+     bulkProps.merging([
+        "scanBody": prop("boolean", "Also scan the body for unsubscribe links when a header exists (default false)")]) { $1 },
+     [], getUnsubscribe),
+
+    ("mail_unsubscribe", "Unsubscribe from the newsletters of one or more messages (one per sender/list). One-click (RFC 8058) is POSTed directly; mailto targets become drafts (sendMailto=true sends them); plain links are returned for manual opening, never fetched. dryRun defaults to TRUE — show the plan first, then call again with dryRun=false.",
+     bulkProps.merging([
+        "dryRun": prop("boolean", "Only show what would happen (default true)"),
+        "sendMailto": prop("boolean", "Send mailto unsubscribe emails directly instead of opening drafts (default false)")]) { $1 },
+     [], unsubscribe),
 ]
 
 // MARK: - JSON-RPC dispatch
@@ -118,7 +137,7 @@ func handle(_ json: [String: Any]) {
         sendResult(id: id, [
             "protocolVersion": params["protocolVersion"] as? String ?? "2025-03-26",
             "capabilities": ["tools": [:]],
-            "serverInfo": ["name": "mail-mcp", "version": "1.1.0"],
+            "serverInfo": ["name": "mail-mcp", "version": "1.2.0"],
         ])
     case "ping":
         if let id { sendResult(id: id, [:]) }
