@@ -17,7 +17,7 @@ Modelled on [AlexChambers/calendar-mcp](https://github.com/AlexChambers/calendar
 | `mail_get_message` | Headers, attachment names, plain-text body |
 | `mail_save_attachments` | Save attachments of one or many messages (default `~/Downloads/Mail Attachments`; never overwrites) |
 | `mail_compose` | New email. Opens a draft for review by default; `send=true` sends |
-| `mail_reply` | Reply / reply-all. Draft by default; `send=true` sends |
+| `mail_reply` | Reply / reply-all (built as a new message: Re: subject, original quoted, sent from the receiving account — Mail ignores body text set on a native `reply`). Draft by default; `send=true` sends |
 | `mail_update_messages` | Bulk mark read/flagged, archive, move, or move to Trash |
 | `mail_list_newsletters` | Senders grouped by message count whose latest mail has a `List-Unsubscribe` header, with the unsubscribe method (one-click, mailto, https). Needs the index |
 | `mail_get_unsubscribe` | Unsubscribe targets of one or many messages: header https/mailto, RFC 8058 one-click, or links found in the body. Read-only |

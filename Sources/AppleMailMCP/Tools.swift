@@ -467,27 +467,102 @@ func composeMessage(_ a: [String: Any]) throws -> String {
         : "Draft “\(subject)” opened in Mail for review (not sent).\(sigNote) Pass send=true to send directly."
 }
 
+/// "Re: " + subject unless it already starts with Re:/Aw:/Antw:.
+func replySubject(_ subject: String) -> String {
+    let lower = subject.lowercased()
+    return ["re:", "aw:", "antw:"].contains(where: { lower.hasPrefix($0) }) ? subject : "Re: \(subject)"
+}
+
+/// Original message quoted with "> " under an attribution line.
+func quotedOriginal(sender: String, isoDate: String, content: String, maxChars: Int = 20000) -> String {
+    var date = isoDate
+    if let d = ISO8601DateFormatter.localNoTZ.date(from: isoDate) {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "de_DE")
+        f.dateFormat = "dd.MM.yyyy 'um' HH:mm"
+        date = f.string(from: d)
+    }
+    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = trimmed.count > maxChars ? String(trimmed.prefix(maxChars)) + "\n[…]" : trimmed
+    // Mail's content uses \r, \n and Unicode line/paragraph separators.
+    let lines = text.replacingOccurrences(of: "\r\n", with: "\n")
+        .components(separatedBy: .newlines)
+        .map { $0.isEmpty ? ">" : "> \($0)" }
+    return "Am \(date) schrieb \(sender):\n\n" + lines.joined(separator: "\n")
+}
+
+extension ISO8601DateFormatter {
+    /// Parses AppleScript's «class isot» strings ("2026-11-24T11:44:48", local time).
+    static let localNoTZ: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withFullDate, .withTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+        f.timeZone = .current
+        return f
+    }()
+}
+
+/// Mail's `reply` command ignores `set content` on current macOS (the draft ends up empty),
+/// so a reply is built as a new outgoing message: Re: subject, original quoted below, sent from
+/// the account the message arrived in.
 func replyMessage(_ a: [String: Any]) throws -> String {
     let id = a.int("messageId", -1)
     guard id >= 0 else { throw ToolError("Missing required argument 'messageId'") }
     let body = try a.require("body")
     let loc = try locate(id, a)
-    let sendNow = a.bool("send", false)
     let replyAll = a.bool("replyAll", false)
-    try runMail("""
+    let raw = try runMail("""
     set m to \(messageRef(id: id, account: loc.account, mailbox: loc.mailbox))
-    set r to reply m with opening window\(replyAll ? " and reply to all" : "")
-    delay 0.5
-    set quoted to ""
+    set FS to character id 31
+    set RS to character id 30
+    set toList to ""
+    repeat with x in to recipients of m
+        set toList to toList & (address of x) & RS
+    end repeat
+    set ccList to ""
+    repeat with x in cc recipients of m
+        set ccList to ccList & (address of x) & RS
+    end repeat
+    set rt to ""
     try
-        set quoted to content of r
+        set rt to reply to of m
     end try
-    set content of r to \(q(body + "\n\n")) & quoted
-    \(signatureSnippet("r", requested: a.str("signature"), account: loc.account).script)
-    \(sendNow ? "send r" : "activate")
-    return "ok"
+    if rt is missing value then set rt to ""
+    set c to ""
+    try
+        set c to content of m
+    end try
+    return (sender of m) & FS & rt & FS & (subject of m) & FS & ((date received of m) as «class isot» as string) & FS & toList & FS & ccList & FS & c
     """)
-    return sendNow ? "Reply sent." : "Reply draft opened in Mail for review (not sent). Pass send=true to send directly."
+    let f = raw.split(separator: "\u{1F}", maxSplits: 6, omittingEmptySubsequences: false).map(String.init)
+    guard f.count == 7 else { throw ToolError("Could not read message \(id) to reply to") }
+    let (sender, replyTo, subject, isoDate) = (f[0], f[1], f[2], f[3])
+    let list = { (s: String) in s.split(separator: "\u{1E}").map { bareAddress(String($0)) }.filter { !$0.isEmpty } }
+
+    let acct = try findAccount(loc.account)
+    let own = Set((acct?.emails ?? []).map { $0.lowercased() })
+    let primary = bareAddress(replyTo.isEmpty ? sender : replyTo)
+    var to = [primary]
+    var cc: [String] = []
+    if replyAll {
+        var seen = Set([primary.lowercased()]).union(own)
+        for addr in list(f[4]) where seen.insert(addr.lowercased()).inserted { to.append(addr) }
+        for addr in list(f[5]) where seen.insert(addr.lowercased()).inserted { cc.append(addr) }
+    }
+    // Send from the address the message was sent to, if it belongs to this account.
+    let recipients = (list(f[4]) + list(f[5])).map { $0.lowercased() }
+    let from = (acct?.emails.first { recipients.contains($0.lowercased()) }) ?? loc.account
+
+    var args: [String: Any] = [
+        "to": to, "cc": cc, "from": from,
+        "subject": replySubject(subject),
+        "body": body + "\n\n" + quotedOriginal(sender: sender, isoDate: isoDate, content: f[6]),
+        "send": a.bool("send", false),
+    ]
+    // `from` may be an address, so resolve the signature from the account itself.
+    let sig = a.str("signature")
+    args["signature"] = sig.isEmpty ? (defaultSignatureName(forAccount: loc.account) ?? "none") : sig
+    let result = try composeMessage(args)
+    return result.replacingOccurrences(of: "Draft “", with: "Reply draft “")
 }
 
 // MARK: - Updating (bulk)
